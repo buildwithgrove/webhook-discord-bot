@@ -52,7 +52,7 @@ The generic handler in `app.ts` picks it up automatically — no other changes n
 1. Use the button below to deploy to Render </br>
 <a href="https://render.com/deploy?repo=https://github.com/buildwithgrove/webhook-discord-bot/tree/main"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render"></a>
 
-2. Follow [Render webhook instructions](https://render.com/docs/webhooks) to create a webhook with the URL from your service and `/webhook` path
+2. Follow [Render webhook instructions](https://render.com/docs/webhooks) to create a webhook with the URL: `https://webhook-discord-bot-ruv6-ruv6.onrender.com/webhook`
 3. Follow [instructions](https://render.com/docs/api#1-create-an-api-key) to create a Render API Key
 4. Follow [instructions](https://discord.com/developers/docs/quick-start/getting-started#step-1-creating-an-app) to create a Discord App and copy the token
 5. Navigate to the installation settings for your app and

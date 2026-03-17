@@ -8,7 +8,7 @@ projects:
           - type: web
             name: webhook-discord-bot-ruv6
             runtime: node
-            repo: https://github.com/render-examples/webhook-discord-bot
+            repo: https://github.com/buildwithgrove/webhook-discord-bot
             plan: starter
             envVars:
               - key: DISCORD_CHANNEL_ID
