@@ -1,6 +1,6 @@
 import express, {NextFunction, Request, Response} from "express";
 import {Webhook, WebhookUnbrandedRequiredHeaders, WebhookVerificationError} from "standardwebhooks"
-import {RenderEvent, RenderService, WebhookPayload} from "./render";
+import {RenderEvent, RenderService, WebhookPayload, webhookMeta} from "./render";
 import {
     ActionRowBuilder,
     ButtonBuilder,
@@ -95,16 +95,32 @@ function validateWebhook(req: Request) {
 
 async function handleWebhook(payload: WebhookPayload) {
     try {
-        switch (payload.type) {
-            case "server_failed":
-                const service = await fetchServiceInfo(payload)
-                const event = await fetchEventInfo(payload)
+        const meta = webhookMeta[payload.type]
+        if (!meta) {
+            console.log(`unhandled webhook type ${payload.type} for service ${payload.data.serviceId}`)
+            return
+        }
 
-                console.log(`sending discord message for ${service.name}`)
-                await sendServerFailedMessage(service, event.details.reason)
-                return
-            default:
-                console.log(`unhandled webhook type ${payload.type} for service ${payload.data.serviceId}`)
+        let service: RenderService;
+        try {
+            service = await fetchServiceInfo(payload)
+        } catch (error) {
+            console.warn(`Could not fetch service info for ${payload.data.serviceId}: ${error}`);
+            // Fallback to data in payload if API call fails
+            service = {
+                id: payload.data.serviceId,
+                name: payload.data.serviceName || payload.data.serviceId,
+                dashboardUrl: `https://dashboard.render.com` // Generic fallback
+            }
+        }
+
+        const event = await fetchEventInfo(payload)
+        console.log(`sending discord message for ${service.name} (${payload.type})`)
+
+        if (payload.type === "server_failed") {
+            await sendServerFailedMessage(service, event.details.reason)
+        } else {
+            await sendGenericMessage(payload, service, event, meta)
         }
     } catch (error) {
         console.error(error)
@@ -149,6 +165,89 @@ async function sendServerFailedMessage(service: RenderService, failureReason: an
     channel.send({embeds: [embed], components: [row]})
 }
 
+async function sendGenericMessage(
+    payload: WebhookPayload,
+    service: RenderService,
+    event: RenderEvent,
+    meta: { color: number; label: string; emoji: string },
+) {
+    const channel = await client.channels.fetch(discordChannelID);
+    if (!channel) {
+        throw new Error(`unable to find specified Discord channel ${discordChannelID}`);
+    }
+    if (!channel.isSendable()) {
+        throw new Error(`specified Discord channel ${discordChannelID} is not sendable`);
+    }
+
+    const description = buildDescription(payload, event)
+
+    const embed = new EmbedBuilder()
+        .setColor(meta.color)
+        .setTitle(`${meta.emoji} ${service.name} — ${meta.label}`)
+        .setDescription(description)
+        .setURL(service.dashboardUrl)
+        .setTimestamp(new Date(payload.timestamp))
+
+    const logs = new ButtonBuilder()
+        .setLabel("View Logs")
+        .setURL(`${service.dashboardUrl}/logs`)
+        .setStyle(ButtonStyle.Link);
+    const row = new ActionRowBuilder<MessageActionRowComponentBuilder>()
+        .addComponents(logs);
+
+    await channel.send({embeds: [embed], components: [row]})
+}
+
+
+function buildDescription(payload: WebhookPayload, event: RenderEvent): string {
+    const parts: string[] = []
+
+    // Include status when present (build_ended, deploy_ended, etc.)
+    if (payload.data.status) {
+        parts.push(`**Status:** ${payload.data.status.toUpperCase()}`)
+    }
+
+    const d = event.details || {}
+
+    // Scaling details
+    if (d.fromInstances !== undefined && d.toInstances !== undefined) {
+        parts.push(`Scaled from **${d.fromInstances}** → **${d.toInstances}** instances`)
+    }
+
+    // Postgres / Disk scaling
+    if (d.fromSizeGB !== undefined && d.toSizeGB !== undefined) {
+        parts.push(`Size changed from **${d.fromSizeGB}GB** → **${d.toSizeGB}GB**`)
+    }
+
+    // Maintenance / Upgrade details
+    if (d.version) {
+        parts.push(`**Version:** ${d.version}`)
+    }
+
+    // Failure reason (for events other than server_failed which has its own handler)
+    if (d.reason) {
+        if (typeof d.reason === "string") {
+            parts.push(`**Reason:** ${d.reason}`)
+        } else if (d.reason.nonZeroExit) {
+            parts.push(`**Reason:** Exited with status ${d.reason.nonZeroExit}`)
+        } else if (d.reason.oomKilled) {
+            parts.push(`**Reason:** Out of Memory`)
+        } else if (d.reason.timedOutSeconds) {
+            parts.push(`**Reason:** Timed out (${d.reason.timedOutReason || d.reason.timedOutSeconds + "s"})`)
+        }
+    }
+
+    if (parts.length === 0) {
+        // Fallback for events with no specific details handled yet
+        if (payload.type.includes("started")) parts.push("_Started_")
+        if (payload.type.includes("ended")) parts.push("_Ended_")
+        if (payload.type.includes("available")) parts.push("_Available_")
+        if (payload.type.includes("failed")) parts.push("_Failed_")
+    }
+
+    return parts.length > 0 ? parts.join("\n") : `Event received for ${payload.data.serviceId}`
+}
+
 // fetchEventInfo fetches the event that triggered the webhook
 // some events have additional information that isn't in the webhook payload
 // for example, deploy events have the deploy id
@@ -172,8 +271,16 @@ async function fetchEventInfo(payload: WebhookPayload): Promise<RenderEvent> {
 }
 
 async function fetchServiceInfo(payload: WebhookPayload): Promise<RenderService> {
+    const id = payload.data.serviceId;
+    let endpoint = "services";
+    if (id.startsWith("pg-")) {
+        endpoint = "postgres";
+    } else if (id.startsWith("kv-")) {
+        endpoint = "key-values";
+    }
+
     const res = await fetch(
-        `${renderAPIURL}/services/${payload.data.serviceId}`,
+        `${renderAPIURL}/${endpoint}/${id}`,
         {
             method: "get",
             headers: {
@@ -186,9 +293,10 @@ async function fetchServiceInfo(payload: WebhookPayload): Promise<RenderService>
     if (res.ok) {
         return res.json()
     } else {
-        throw new Error(`unable to fetch service info; received code :${res.status.toString()}`)
+        throw new Error(`unable to fetch service info for ${id}; received code :${res.status.toString()}`)
     }
 }
+
 
 process.on('SIGTERM', () => {
     console.debug('SIGTERM signal received: closing HTTP server')
