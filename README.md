@@ -42,6 +42,22 @@ export const webhookMeta = {
 
 The generic handler in `app.ts` picks it up automatically — no other changes needed unless the event requires custom formatting (see `server_failed` for an example).
 
+## Discord Bot Permissions
+
+The bot is managed via the [Discord Developer Portal](https://discord.com/developers/applications/1483579696548548748/information).
+
+**Required OAuth2 settings:**
+
+- **Scope:** `bot`
+- **Permissions:** `SendMessages` and `ViewChannels`
+- **Requires OAuth2 Code Grant:** Leave **disabled** — this is only needed for apps that use user OAuth2 tokens (e.g., "Login with Discord"). This bot only needs the bot token.
+
+**If the bot gets a `Missing Access` (50001) error:**
+
+1. Verify the bot's role has `View Channel` and `Send Messages` in the target channel's permission settings
+2. If the channel was deleted/recreated, update `DISCORD_CHANNEL_ID` with the new channel ID
+3. Re-invite the bot using the install link from **OAuth2 > Installation** in the Developer Portal
+
 ## Prerequisites
 
 - [Sign up for a Render account](https://dashboard.render.com/register) (Professional plan or higher required for [webhooks](https://render.com/docs/webhooks))
