@@ -95,10 +95,22 @@ function validateWebhook(req: Request) {
 
 async function handleWebhook(payload: WebhookPayload) {
     try {
-        const meta = webhookMeta[payload.type]
+        let meta = webhookMeta[payload.type]
         if (!meta) {
             console.log(`unhandled webhook type ${payload.type} for service ${payload.data.serviceId}`)
             return
+        }
+
+        // Override emoji/color for deploy events based on status
+        if (payload.type === "deploy_started") {
+            meta = { ...meta, color: 0xf1c40f, emoji: "🟡" }
+        } else if (payload.type === "deploy_ended") {
+            const status = payload.data.status?.toLowerCase()
+            if (status === "succeeded") {
+                meta = { ...meta, color: 0x2ecc71, emoji: "🟢" }
+            } else if (status === "failed" || status === "canceled") {
+                meta = { ...meta, color: 0xe74c3c, emoji: "🔴" }
+            }
         }
 
         let service: RenderService;
