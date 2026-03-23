@@ -23,6 +23,23 @@ export interface RenderEvent {
   details: any;
 }
 
+export interface RenderCommit {
+  id: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface RenderDeploy {
+  id: string;
+  commit?: RenderCommit;
+  branch?: string;
+  trigger?: string;
+  status?: string;
+  createdAt?: string;
+  finishedAt?: string;
+  imageUrl?: string;
+}
+
 // Maps webhook types to Discord embed color and label
 export const webhookMeta: Record<
   string,

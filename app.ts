@@ -1,6 +1,6 @@
 import express, {NextFunction, Request, Response} from "express";
 import {Webhook, WebhookUnbrandedRequiredHeaders, WebhookVerificationError} from "standardwebhooks"
-import {RenderEvent, RenderService, WebhookPayload, webhookMeta} from "./render";
+import {RenderDeploy, RenderEvent, RenderService, WebhookPayload, webhookMeta} from "./render";
 import {
     ActionRowBuilder,
     ButtonBuilder,
@@ -127,12 +127,26 @@ async function handleWebhook(payload: WebhookPayload) {
         }
 
         const event = await fetchEventInfo(payload)
+
+        // For deploy/build events, fetch deploy details for commit metadata
+        let deploy: RenderDeploy | undefined
+        const deployId = event.details?.deployId
+        if (deployId && isDeployEvent(payload.type)) {
+            try {
+                deploy = await fetchDeployInfo(payload.data.serviceId, deployId)
+                // TODO_REMOVE_LATER: Remove once deploy response shape is confirmed
+                console.log(`Deploy info for ${deployId}:\n${JSON.stringify(deploy, null, 2)}`)
+            } catch (error) {
+                console.warn(`Could not fetch deploy info for ${deployId}: ${error}`)
+            }
+        }
+
         console.log(`sending discord message for ${service.name} (${payload.type})`)
 
         if (payload.type === "server_failed") {
             await sendServerFailedMessage(service, event.details.reason)
         } else {
-            await sendGenericMessage(payload, service, event, meta)
+            await sendGenericMessage(payload, service, event, meta, deploy)
         }
     } catch (error) {
         console.error(error)
@@ -182,6 +196,7 @@ async function sendGenericMessage(
     service: RenderService,
     event: RenderEvent,
     meta: { color: number; label: string; emoji: string },
+    deploy?: RenderDeploy,
 ) {
     const channel = await client.channels.fetch(discordChannelID);
     if (!channel) {
@@ -199,6 +214,28 @@ async function sendGenericMessage(
         .setDescription(description)
         .setURL(service.dashboardUrl)
         .setTimestamp(new Date(payload.timestamp))
+
+    // Add deploy metadata fields when available
+    if (deploy) {
+        if (deploy.commit?.message) {
+            // First line of commit message (often the PR title)
+            const commitTitle = deploy.commit.message.split("\n")[0].substring(0, 256)
+            embed.addFields({ name: "Commit", value: commitTitle })
+        }
+        if (deploy.commit?.id) {
+            const shortSha = deploy.commit.id.substring(0, 7)
+            embed.addFields({ name: "SHA", value: `\`${shortSha}\``, inline: true })
+        }
+        if (deploy.branch) {
+            embed.addFields({ name: "Branch", value: `\`${deploy.branch}\``, inline: true })
+        }
+        if (deploy.trigger) {
+            embed.addFields({ name: "Trigger", value: deploy.trigger, inline: true })
+        }
+        if (deploy.imageUrl) {
+            embed.addFields({ name: "Image", value: `\`${deploy.imageUrl}\`` })
+        }
+    }
 
     const logs = new ButtonBuilder()
         .setLabel("View Logs")
@@ -309,6 +346,35 @@ async function fetchServiceInfo(payload: WebhookPayload): Promise<RenderService>
     }
 }
 
+
+const DEPLOY_EVENT_TYPES = new Set([
+    "deploy_started", "deploy_ended",
+    "build_started", "build_ended",
+    "pre_deploy_started", "pre_deploy_ended",
+])
+
+function isDeployEvent(type: string): boolean {
+    return DEPLOY_EVENT_TYPES.has(type)
+}
+
+async function fetchDeployInfo(serviceId: string, deployId: string): Promise<RenderDeploy> {
+    const res = await fetch(
+        `${renderAPIURL}/services/${serviceId}/deploys/${deployId}`,
+        {
+            method: "get",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                Authorization: `Bearer ${renderAPIKey}`,
+            },
+        },
+    )
+    if (res.ok) {
+        return res.json()
+    } else {
+        throw new Error(`unable to fetch deploy info for ${deployId}; received code: ${res.status}`)
+    }
+}
 
 process.on('SIGTERM', () => {
     console.debug('SIGTERM signal received: closing HTTP server')
