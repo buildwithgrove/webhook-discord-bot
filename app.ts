@@ -79,24 +79,38 @@ client.on('debug', msg => {
     }
 });
 
+// Cache Discord API token check to avoid rate limit amplification.
+// Without caching, every health poll that gets a 429 counts as an invalid request,
+// which accumulates toward Cloudflare's 10k/10min ban threshold.
+let cachedTokenCheck: { tokenValid: boolean; botUser: any; checkedAt: number } | null = null;
+const TOKEN_CHECK_TTL_MS = 60_000;
+
 app.get("/health", async (req: Request, res: Response) => {
-    // Test token via REST API (no WebSocket needed)
-    let tokenValid = false;
-    let botUser = null;
-    try {
-        const r = await fetch("https://discord.com/api/v10/users/@me", {
-            headers: { Authorization: `Bot ${discordToken}` },
-        });
-        if (r.ok) {
-            botUser = await r.json();
-            tokenValid = true;
-        } else {
-            botUser = { error: r.status, body: await r.text() };
+    const now = Date.now();
+    if (!cachedTokenCheck || now - cachedTokenCheck.checkedAt > TOKEN_CHECK_TTL_MS) {
+        let tokenValid = false;
+        let botUser = null;
+        try {
+            const r = await fetch("https://discord.com/api/v10/users/@me", {
+                headers: { Authorization: `Bot ${discordToken}` },
+            });
+            if (r.ok) {
+                botUser = await r.json();
+                tokenValid = true;
+            } else {
+                botUser = { error: r.status, body: await r.text() };
+            }
+        } catch (e: any) {
+            botUser = { error: e.message };
         }
-    } catch (e: any) {
-        botUser = { error: e.message };
+        cachedTokenCheck = { tokenValid, botUser, checkedAt: now };
     }
-    res.json({ discordReady: client.isReady(), tokenValid, botUser, uptime: process.uptime() });
+    res.json({
+        discordReady: client.isReady(),
+        tokenValid: cachedTokenCheck.tokenValid,
+        botUser: cachedTokenCheck.botUser,
+        uptime: process.uptime(),
+    });
 });
 
 app.post("/webhook", express.raw({type: 'application/json'}), (req: Request, res: Response, next: NextFunction) => {
