@@ -35,6 +35,13 @@ if (!discordToken ) {
     console.error("Error: DISCORD_TOKEN is not set.");
     process.exit(1);
 }
+
+// Route Discord REST API calls through a Cloudflare Worker proxy to avoid
+// Render's shared-IP rate limits (Cloudflare Error 1015).
+// Worker source: discord-proxy/src/index.ts
+// Deployed at: https://discord-proxy.buildwithgrove.workers.dev
+const discordApiBase = process.env.DISCORD_API_PROXY || 'https://discord.com';
+console.log(`[config] DISCORD_API_PROXY=${discordApiBase === 'https://discord.com' ? '(not set, using discord.com directly)' : discordApiBase}`);
 const discordChannelID = process.env.DISCORD_CHANNEL_ID || '';
 if (!discordChannelID ) {
     console.error("Error: DISCORD_CHANNEL_ID is not set.");
@@ -64,7 +71,11 @@ function logDiscordStartup(message: string) {
 }
 
 // Create a new client instance
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// Route discord.js REST calls through the proxy when configured
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds],
+    rest: { api: `${discordApiBase}/api` },
+});
 
 // When the client is ready, run this code (only once).
 // The distinction between `client: Client<boolean>` and `readyClient: Client<true>` is important for TypeScript developers.
@@ -113,7 +124,7 @@ app.get("/health", async (req: Request, res: Response) => {
     let tokenValid = false;
     let botUser = null;
     try {
-        const r = await loggedFetch("health", "https://discord.com/api/v10/users/@me", {
+        const r = await loggedFetch("health", `${discordApiBase}/api/v10/users/@me`, {
             headers: { Authorization: `Bot ${discordToken}` },
         });
         if (r.ok) {

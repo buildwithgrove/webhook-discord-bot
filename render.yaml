@@ -19,6 +19,8 @@ projects:
                 sync: false
               - key: RENDER_API_KEY
                 sync: false
+              - key: DISCORD_API_PROXY
+                sync: false
             region: oregon
             buildCommand: pnpm install && pnpm run build
             startCommand: pnpm run start

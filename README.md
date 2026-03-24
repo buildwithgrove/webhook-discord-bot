@@ -12,6 +12,7 @@ The alerts are sent to the [#alerts](https://discord.com/channels/82432447525643
 
 ## Table of Contents <!-- omit in toc -->
 
+- [Discord API Proxy (Cloudflare Worker)](#discord-api-proxy-cloudflare-worker)
 - [Supported Webhook Events](#supported-webhook-events)
 - [Adding a New Webhook Event](#adding-a-new-webhook-event)
 - [Discord Bot Permissions](#discord-bot-permissions)
@@ -20,6 +21,35 @@ The alerts are sent to the [#alerts](https://discord.com/channels/82432447525643
 - [Deploy to Render](#deploy-to-render)
 - [Developing](#developing)
 - [Building](#building)
+
+## Discord API Proxy (Cloudflare Worker)
+
+Render uses shared outbound IPs. Other tenants hitting Discord from the same IP can trigger Cloudflare's rate limiter (Error 1015), which blocks **all** Discord API calls from that IP — including ours.
+
+To work around this, Discord REST API calls are routed through a [Cloudflare Worker](https://workers.cloudflare.com/) (free tier: 100k req/day), giving us a dedicated outbound IP.
+
+- **Worker URL:** `https://discord-proxy.buildwithgrove.workers.dev`
+- **Worker source:** [`discord-proxy/src/index.ts`](discord-proxy/src/index.ts)
+- **Cloudflare dashboard:** `https://dash.cloudflare.com/343857f02bb4bd0b157b88ff59e7d867/workers`
+- **Render env var:** `DISCORD_API_PROXY=https://discord-proxy.buildwithgrove.workers.dev`
+
+**How it works:**
+- The Worker is a simple reverse proxy that forwards requests to `discord.com`
+- discord.js REST calls (channel.fetch, channel.send) and the `/health` check both route through it
+- The gateway WebSocket (`client.login`) still connects directly — it's a single persistent connection that doesn't trigger rate limits
+- Without the env var set, everything falls back to `discord.com` directly
+
+**Redeploying the Worker:**
+
+```bash
+cd discord-proxy && npx wrangler deploy
+```
+
+**If the bot can't connect to Discord (Error 1015 / login timeout):**
+
+1. Check if `DISCORD_API_PROXY` is set in Render's environment variables
+2. Verify the Worker is deployed: `curl https://discord-proxy.buildwithgrove.workers.dev/api/v10/gateway`
+3. If the Render IP is currently Cloudflare-banned, redeploy the Render service to get a new IP
 
 ## Supported Webhook Events
 
@@ -98,6 +128,7 @@ Below is the original README from the forked repo.
    - `RENDER_API_KEY` to the key created in step 3
    - `DISCORD_TOKEN` to the token created in step 4
    - `DISCORD_CHANNEL_ID` to the channel id you want messages sent to
+   - `DISCORD_API_PROXY` (optional) to a Cloudflare Worker URL that proxies Discord API calls (see [Discord API Proxy](#discord-api-proxy-cloudflare-worker))
 
 ## Developing
 
