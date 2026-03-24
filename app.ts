@@ -199,6 +199,7 @@ async function sendGenericMessage(
     meta: { color: number; label: string; emoji: string },
     deploy?: RenderDeploy,
 ) {
+    console.log(`[debug] client.isReady=${client.isReady()}, fetching channel ${discordChannelID}`)
     const channel = await client.channels.fetch(discordChannelID);
     if (!channel) {
         throw new Error(`unable to find specified Discord channel ${discordChannelID}`);
@@ -207,6 +208,7 @@ async function sendGenericMessage(
         throw new Error(`specified Discord channel ${discordChannelID} is not sendable`);
     }
 
+    console.log(`[debug] channel fetched, building embed`)
     const description = buildDescription(payload, event)
 
     const embed = new EmbedBuilder()
@@ -245,6 +247,7 @@ async function sendGenericMessage(
     const row = new ActionRowBuilder<MessageActionRowComponentBuilder>()
         .addComponents(logs);
 
+    console.log(`[debug] sending to Discord...`)
     await channel.send({embeds: [embed], components: [row]})
     console.log(`discord message sent successfully to channel ${discordChannelID}`)
 }
