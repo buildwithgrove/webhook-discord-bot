@@ -52,8 +52,15 @@ client.once(Events.ClientReady, readyClient => {
 });
 
 // Log in to Discord with your client's token
-client.login(discordToken).catch(err => {
+console.log(`Attempting Discord login (token length: ${discordToken.length})...`)
+client.login(discordToken).then(() => {
+    console.log(`Discord login promise resolved`);
+}).catch(err => {
     console.error(`unable to connect to Discord: ${err}`);
+});
+
+client.on('error', err => {
+    console.error(`Discord client error: ${err}`);
 });
 
 app.post("/webhook", express.raw({type: 'application/json'}), (req: Request, res: Response, next: NextFunction) => {
@@ -199,7 +206,9 @@ async function sendGenericMessage(
     meta: { color: number; label: string; emoji: string },
     deploy?: RenderDeploy,
 ) {
-    console.log(`[debug] client.isReady=${client.isReady()}, fetching channel ${discordChannelID}`)
+    if (!client.isReady()) {
+        throw new Error(`Discord client is not ready (isReady=false). Cannot send message.`);
+    }
     const channel = await client.channels.fetch(discordChannelID);
     if (!channel) {
         throw new Error(`unable to find specified Discord channel ${discordChannelID}`);
