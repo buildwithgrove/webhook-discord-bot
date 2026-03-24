@@ -188,7 +188,8 @@ async function sendServerFailedMessage(service: RenderService, failureReason: an
     const row = new ActionRowBuilder<MessageActionRowComponentBuilder>()
         .addComponents(logs);
 
-    channel.send({embeds: [embed], components: [row]})
+    await channel.send({embeds: [embed], components: [row]})
+    console.log(`discord message sent successfully to channel ${discordChannelID}`)
 }
 
 async function sendGenericMessage(
@@ -245,6 +246,7 @@ async function sendGenericMessage(
         .addComponents(logs);
 
     await channel.send({embeds: [embed], components: [row]})
+    console.log(`discord message sent successfully to channel ${discordChannelID}`)
 }
 
 
