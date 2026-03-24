@@ -41,6 +41,28 @@ if (!discordChannelID ) {
     process.exit(1);
 }
 
+function logOutboundRequest(source: string, method: string, target: string, authenticated: boolean) {
+    console.log(`[request] ${source} ${method.toUpperCase()} ${target} auth=${authenticated ? "yes" : "no"}`);
+}
+
+function hasAuthHeader(headers?: HeadersInit): boolean {
+    if (!headers) {
+        return false;
+    }
+
+    return new Headers(headers).has("authorization");
+}
+
+async function loggedFetch(source: string, target: string, init: RequestInit = {}) {
+    const method = init.method ?? "GET";
+    logOutboundRequest(source, method, target, hasAuthHeader(init.headers));
+    return fetch(target, init);
+}
+
+function logDiscordStartup(message: string) {
+    console.log(`[discord-startup] ${message}`);
+}
+
 // Create a new client instance
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -49,28 +71,35 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 // It makes some properties non-nullable.
 client.once(Events.ClientReady, readyClient => {
     console.log(`Discord client setup! Logged in as ${readyClient.user.tag}`);
+    logDiscordStartup(`ClientReady fired for ${readyClient.user.tag} (${readyClient.user.id})`);
 });
 
 // Log in to Discord with your client's token
-console.log(`Attempting Discord login (token length: ${discordToken.length})...`)
+logDiscordStartup(`Attempting Discord login (token length: ${discordToken.length})`);
 
 const loginTimeout = setTimeout(() => {
     console.error(`Discord login timed out after 30s — gateway WebSocket may be blocked`);
+    logDiscordStartup(`Login timeout after 30s`);
 }, 30_000);
 
+logDiscordStartup(`Calling client.login(...)`);
 client.login(discordToken).then(() => {
     clearTimeout(loginTimeout);
     console.log(`Discord login promise resolved`);
+    logDiscordStartup(`client.login promise resolved`);
 }).catch(err => {
     clearTimeout(loginTimeout);
     console.error(`unable to connect to Discord: ${err}`);
+    logDiscordStartup(`client.login promise rejected: ${err instanceof Error ? err.message : String(err)}`);
 });
 
 client.on('error', err => {
     console.error(`Discord client error: ${err}`);
+    logDiscordStartup(`client error: ${err instanceof Error ? err.message : String(err)}`);
 });
 client.on('warn', msg => {
     console.warn(`Discord client warning: ${msg}`);
+    logDiscordStartup(`client warning: ${msg}`);
 });
 client.on('debug', msg => {
     // Only log gateway-related debug messages
@@ -79,38 +108,24 @@ client.on('debug', msg => {
     }
 });
 
-// Cache Discord API token check to avoid rate limit amplification.
-// Without caching, every health poll that gets a 429 counts as an invalid request,
-// which accumulates toward Cloudflare's 10k/10min ban threshold.
-let cachedTokenCheck: { tokenValid: boolean; botUser: any; checkedAt: number } | null = null;
-const TOKEN_CHECK_TTL_MS = 60_000;
-
 app.get("/health", async (req: Request, res: Response) => {
-    const now = Date.now();
-    if (!cachedTokenCheck || now - cachedTokenCheck.checkedAt > TOKEN_CHECK_TTL_MS) {
-        let tokenValid = false;
-        let botUser = null;
-        try {
-            const r = await fetch("https://discord.com/api/v10/users/@me", {
-                headers: { Authorization: `Bot ${discordToken}` },
-            });
-            if (r.ok) {
-                botUser = await r.json();
-                tokenValid = true;
-            } else {
-                botUser = { error: r.status, body: await r.text() };
-            }
-        } catch (e: any) {
-            botUser = { error: e.message };
+    // Test token via REST API (no WebSocket needed)
+    let tokenValid = false;
+    let botUser = null;
+    try {
+        const r = await loggedFetch("health", "https://discord.com/api/v10/users/@me", {
+            headers: { Authorization: `Bot ${discordToken}` },
+        });
+        if (r.ok) {
+            botUser = await r.json();
+            tokenValid = true;
+        } else {
+            botUser = { error: r.status, body: await r.text() };
         }
-        cachedTokenCheck = { tokenValid, botUser, checkedAt: now };
+    } catch (e: any) {
+        botUser = { error: e.message };
     }
-    res.json({
-        discordReady: client.isReady(),
-        tokenValid: cachedTokenCheck.tokenValid,
-        botUser: cachedTokenCheck.botUser,
-        uptime: process.uptime(),
-    });
+    res.json({ discordReady: client.isReady(), tokenValid, botUser, uptime: process.uptime() });
 });
 
 app.post("/webhook", express.raw({type: 'application/json'}), (req: Request, res: Response, next: NextFunction) => {
@@ -211,6 +226,7 @@ async function handleWebhook(payload: WebhookPayload) {
 }
 
 async function sendServerFailedMessage(service: RenderService, failureReason: any) {
+    logOutboundRequest("discord.js", "GET", `discord channel ${discordChannelID}`, true);
     const channel = await client.channels.fetch(discordChannelID);
     if (!channel ){
         throw new Error(`unable to find specified Discord channel ${discordChannelID}`);
@@ -245,6 +261,7 @@ async function sendServerFailedMessage(service: RenderService, failureReason: an
     const row = new ActionRowBuilder<MessageActionRowComponentBuilder>()
         .addComponents(logs);
 
+    logOutboundRequest("discord.js", "SEND", `discord channel ${discordChannelID}`, true);
     await channel.send({embeds: [embed], components: [row]})
     console.log(`discord message sent successfully to channel ${discordChannelID}`)
 }
@@ -259,6 +276,7 @@ async function sendGenericMessage(
     if (!client.isReady()) {
         throw new Error(`Discord client is not ready (isReady=false). Cannot send message.`);
     }
+    logOutboundRequest("discord.js", "GET", `discord channel ${discordChannelID}`, true);
     const channel = await client.channels.fetch(discordChannelID);
     if (!channel) {
         throw new Error(`unable to find specified Discord channel ${discordChannelID}`);
@@ -307,6 +325,7 @@ async function sendGenericMessage(
         .addComponents(logs);
 
     console.log(`[debug] sending to Discord...`)
+    logOutboundRequest("discord.js", "SEND", `discord channel ${discordChannelID}`, true);
     await channel.send({embeds: [embed], components: [row]})
     console.log(`discord message sent successfully to channel ${discordChannelID}`)
 }
@@ -365,7 +384,8 @@ function buildDescription(payload: WebhookPayload, event: RenderEvent): string {
 // some events have additional information that isn't in the webhook payload
 // for example, deploy events have the deploy id
 async function fetchEventInfo(payload: WebhookPayload): Promise<RenderEvent> {
-    const res = await fetch(
+    const res = await loggedFetch(
+        "render-api",
         `${renderAPIURL}/events/${payload.data.id}`,
         {
             method: "get",
@@ -392,7 +412,8 @@ async function fetchServiceInfo(payload: WebhookPayload): Promise<RenderService>
         endpoint = "key-values";
     }
 
-    const res = await fetch(
+    const res = await loggedFetch(
+        "render-api",
         `${renderAPIURL}/${endpoint}/${id}`,
         {
             method: "get",
@@ -422,7 +443,8 @@ function isDeployEvent(type: string): boolean {
 }
 
 async function fetchDeployInfo(serviceId: string, deployId: string): Promise<RenderDeploy> {
-    const res = await fetch(
+    const res = await loggedFetch(
+        "render-api",
         `${renderAPIURL}/services/${serviceId}/deploys/${deployId}`,
         {
             method: "get",
