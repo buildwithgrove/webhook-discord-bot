@@ -53,14 +53,34 @@ client.once(Events.ClientReady, readyClient => {
 
 // Log in to Discord with your client's token
 console.log(`Attempting Discord login (token length: ${discordToken.length})...`)
+
+const loginTimeout = setTimeout(() => {
+    console.error(`Discord login timed out after 30s — gateway WebSocket may be blocked`);
+}, 30_000);
+
 client.login(discordToken).then(() => {
+    clearTimeout(loginTimeout);
     console.log(`Discord login promise resolved`);
 }).catch(err => {
+    clearTimeout(loginTimeout);
     console.error(`unable to connect to Discord: ${err}`);
 });
 
 client.on('error', err => {
     console.error(`Discord client error: ${err}`);
+});
+client.on('warn', msg => {
+    console.warn(`Discord client warning: ${msg}`);
+});
+client.on('debug', msg => {
+    // Only log gateway-related debug messages
+    if (msg.includes('Gateway') || msg.includes('Shard') || msg.includes('WS')) {
+        console.log(`[discord-debug] ${msg}`);
+    }
+});
+
+app.get("/health", (req: Request, res: Response) => {
+    res.json({ discordReady: client.isReady(), uptime: process.uptime() });
 });
 
 app.post("/webhook", express.raw({type: 'application/json'}), (req: Request, res: Response, next: NextFunction) => {
