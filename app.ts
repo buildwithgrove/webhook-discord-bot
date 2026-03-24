@@ -79,8 +79,24 @@ client.on('debug', msg => {
     }
 });
 
-app.get("/health", (req: Request, res: Response) => {
-    res.json({ discordReady: client.isReady(), uptime: process.uptime() });
+app.get("/health", async (req: Request, res: Response) => {
+    // Test token via REST API (no WebSocket needed)
+    let tokenValid = false;
+    let botUser = null;
+    try {
+        const r = await fetch("https://discord.com/api/v10/users/@me", {
+            headers: { Authorization: `Bot ${discordToken}` },
+        });
+        if (r.ok) {
+            botUser = await r.json();
+            tokenValid = true;
+        } else {
+            botUser = { error: r.status, body: await r.text() };
+        }
+    } catch (e: any) {
+        botUser = { error: e.message };
+    }
+    res.json({ discordReady: client.isReady(), tokenValid, botUser, uptime: process.uptime() });
 });
 
 app.post("/webhook", express.raw({type: 'application/json'}), (req: Request, res: Response, next: NextFunction) => {
