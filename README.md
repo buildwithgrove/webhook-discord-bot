@@ -1,6 +1,6 @@
 # Grove Webhook Discord Bot <!-- omit in toc -->
 
-Sends Discord notifications for [Render webhook events](https://render.com/docs/webhooks) via [Grove's Discord Bot](https://discord.com/developers/applications/1483579696548548748/information).
+Sends Discord notifications for [Render webhook events](https://render.com/docs/webhooks) via a Discord bot.
 
 Built on top of the [Render Webhook Discord Bot template](https://render.com/templates/webhook-discord-bot).
 
@@ -75,7 +75,7 @@ Unrecognized event types are logged and ignored.
 
 There are two steps:
 
-1. Subscribe to the event on [Render](https://dashboard.render.com/webhook/whk-d6ssrpua2pns738ei740) by clickin the `Enabled` button and editing the events.
+1. Subscribe to the event on [Render](https://dashboard.render.com/webhook/whk-d6ssrpua2pns738ei740) by clicking the `Enabled` button and editing the events.
 2. Add a single entry to the `webhookMeta` map in `render.ts`:
 
 ```ts

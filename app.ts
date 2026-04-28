@@ -120,6 +120,9 @@ client.on('debug', msg => {
 });
 
 app.get("/health", async (req: Request, res: Response) => {
+    // TODO_TECHDEBT: Return a boring public health payload instead of Discord account details.
+    //       Why: This endpoint is public on Render and currently exposes bot identity / upstream
+    //       Discord response details that are useful for debugging but noisy for open source.
     // Test token via REST API (no WebSocket needed)
     let tokenValid = false;
     let botUser = null;
@@ -148,6 +151,9 @@ app.post("/webhook", express.raw({type: 'application/json'}), (req: Request, res
 
     const payload: WebhookPayload = JSON.parse(req.body)
 
+    // TODO_TECHDEBT: Decide whether webhook delivery should happen before the 200 response.
+    //       Why: Acknowledging first prevents Render retries when Discord delivery fails.
+    //       How: Either send synchronously within Render's 15s webhook window or enqueue durable work.
     res.status(200).send({}).end()
 
     // handle the webhook async so we don't timeout the request
@@ -163,7 +169,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     }
 });
 
-const server = app.listen(port, () => console.log(`Example app listening on port ${port}!`));
+const server = app.listen(port, () => console.log(`Webhook Discord bot listening on port ${port}!`));
 
 function validateWebhook(req: Request) {
     const headers: WebhookUnbrandedRequiredHeaders = {
@@ -209,6 +215,9 @@ async function handleWebhook(payload: WebhookPayload) {
             }
         }
 
+        // TODO_TECHDEBT: Fall back to the webhook payload when Render event lookup fails.
+        //       Why: A temporary Render API outage should not drop an otherwise valid notification.
+        //       How: Use payload.data.id/type with empty details and continue with the basic message.
         const event = await fetchEventInfo(payload)
 
         // For deploy/build events, fetch deploy details for commit metadata
@@ -217,7 +226,9 @@ async function handleWebhook(payload: WebhookPayload) {
         if (deployId && isDeployEvent(payload.type)) {
             try {
                 deploy = await fetchDeployInfo(payload.data.serviceId, deployId)
-                // TODO_REMOVE_LATER: Remove once deploy response shape is confirmed
+                // TODO_REMOVE_LATER: Remove this deploy response log once the response shape is confirmed.
+                //   When: Safe after deploy metadata fields have been verified in production logs.
+                //   Why: Full API responses are useful during rollout but should not stay in normal logs.
                 console.log(`Deploy info for ${deployId}:\n${JSON.stringify(deploy, null, 2)}`)
             } catch (error) {
                 console.warn(`Could not fetch deploy info for ${deployId}: ${error}`)

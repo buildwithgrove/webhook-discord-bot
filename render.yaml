@@ -1,4 +1,8 @@
 # Exported from Render on 2026-03-17T22:50:45Z
+# TODO_TECHDEBT: Convert this exported Grove production config into a public example Blueprint.
+#       Why: The current service/project names and repo are correct for Grove, but too specific
+#       for people deploying their own copy from Render's public catalog.
+#       How: Use generic names, document required env vars, and validate the deploy button flow.
 version: "1"
 projects:
   - name: Grove API

@@ -1,10 +1,10 @@
 {
   "name": "webhook-discord-bot",
   "version": "1.0.0",
-  "description": "Render Webhook Receiver Example",
+  "description": "Send Render webhook notifications to a Discord channel.",
   "main": "app.ts",
-  "repository": "https://github.com/render-examples/webhook-discord-bot",
-  "author": "Render Developers",
+  "repository": "https://github.com/buildwithgrove/webhook-discord-bot",
+  "author": "Grove",
   "license": "MIT",
   "private": false,
   "scripts": {
@@ -13,7 +13,12 @@
     "dev": "tsnd --respawn app.ts",
     "typecheck": "tsc --noEmit --pretty"
   },
-  "keywords": [],
+  "keywords": [
+    "render",
+    "discord",
+    "webhooks",
+    "bot"
+  ],
   "dependencies": {
     "discord.js": "^14.18.0",
     "express": "^5.0.1",
