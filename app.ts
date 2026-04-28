@@ -307,7 +307,6 @@ async function sendGenericMessage(
         throw new Error(`specified Discord channel ${discordChannelID} is not sendable`);
     }
 
-    console.log(`[debug] channel fetched, building embed`)
     const description = buildDescription(payload, event)
 
     const embed = new EmbedBuilder()
@@ -346,7 +345,6 @@ async function sendGenericMessage(
     const row = new ActionRowBuilder<MessageActionRowComponentBuilder>()
         .addComponents(logs);
 
-    console.log(`[debug] sending to Discord...`)
     logOutboundRequest("discord.js", "SEND", `discord channel ${discordChannelID}`, true);
     await channel.send({embeds: [embed], components: [row]})
     console.log(`discord message sent successfully to channel ${discordChannelID}`)
